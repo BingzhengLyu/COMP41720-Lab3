@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab3-resilience
+  labels:
+    name: lab3-resilience
+    purpose: distributed-systems-lab3
+

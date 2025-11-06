@@ -1,0 +1,5 @@
+# Requirements for Chaos Toolkit experiments
+chaostoolkit==1.17.0
+chaostoolkit-kubernetes==0.33.0
+chaostoolkit-lib==1.39.0
+

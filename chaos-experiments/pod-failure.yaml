@@ -1,0 +1,105 @@
+version: 1.0.0
+title: Backend Pod Failure Experiment
+description: |
+  This experiment terminates backend service pods to test the resilience
+  of the client service. It verifies that the circuit breaker opens
+  appropriately and the system degrades gracefully.
+
+configuration:
+  kubernetes_namespace: "lab3-resilience"
+
+steady-state-hypothesis:
+  title: Services are running and healthy
+  probes:
+  - name: backend-pods-are-running
+    type: probe
+    provider:
+      type: python
+      module: chaosk8s.pod.probes
+      func: count_pods
+      arguments:
+        label_selector: "app=backend-service"
+        ns: "lab3-resilience"
+    tolerance:
+      type: range
+      range: [1, 2]  # Expecting 1-2 replicas
+  
+  - name: client-service-responds
+    type: probe
+    provider:
+      type: http
+      url: http://localhost:30080/api/stats
+      timeout: 5
+    tolerance:
+      type: status
+      status: 200
+
+method:
+- type: action
+  name: terminate-backend-pods
+  provider:
+    type: python
+    module: chaosk8s.pod.actions
+    func: terminate_pods
+    arguments:
+      label_selector: "app=backend-service"
+      ns: "lab3-resilience"
+      qty: 2  # Terminate all backend pods
+      grace_period: 0
+  pauses:
+    after: 10
+
+- type: probe
+  name: check-circuit-breaker-state
+  provider:
+    type: http
+    url: http://localhost:30080/health
+    timeout: 5
+
+- type: action
+  name: make-requests-during-failure
+  provider:
+    type: process
+    path: bash
+    arguments:
+    - -c
+    - |
+      for i in {1..10}; do
+        curl -s http://localhost:30080/api/call-backend || true
+        sleep 1
+      done
+  pauses:
+    after: 5
+
+- type: probe
+  name: verify-circuit-breaker-opened
+  provider:
+    type: http
+    url: http://localhost:30080/health
+    timeout: 5
+  tolerance:
+    type: jsonpath
+    path: $.circuit_breaker_state
+    expect: "open"
+
+rollbacks:
+- type: action
+  name: wait-for-pod-recovery
+  provider:
+    type: process
+    path: sleep
+    arguments: ["45"]
+
+- type: probe
+  name: verify-backend-pods-recovered
+  provider:
+    type: python
+    module: chaosk8s.pod.probes
+    func: count_pods
+    arguments:
+      label_selector: "app=backend-service"
+      ns: "lab3-resilience"
+  tolerance:
+    type: range
+    range: [1, 2]
+

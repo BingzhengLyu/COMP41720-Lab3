@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-service
+  labels:
+    app: backend-service
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend-service
+  template:
+    metadata:
+      labels:
+        app: backend-service
+        tier: backend
+    spec:
+      containers:
+      - name: backend-service
+        image: backend-service:latest
+        imagePullPolicy: Never  # For local development
+        ports:
+        - containerPort: 5000
+          name: http
+        env:
+        - name: FAILURE_RATE
+          value: "0.3"  # 30% failure rate
+        - name: SLOW_RESPONSE_RATE
+          value: "0.2"  # 20% slow response rate
+        - name: SLOW_RESPONSE_DELAY
+          value: "5"    # 5 seconds delay
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  labels:
+    app: backend-service
+spec:
+  type: ClusterIP
+  selector:
+    app: backend-service
+  ports:
+  - port: 5000
+    targetPort: 5000
+    protocol: TCP
+    name: http
+

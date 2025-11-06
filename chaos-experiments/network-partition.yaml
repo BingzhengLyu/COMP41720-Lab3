@@ -1,0 +1,89 @@
+version: 1.0.0
+title: Network Partition Experiment - Backend Service
+description: |
+  This experiment simulates a network partition by blocking network traffic
+  to the backend service pods, testing how the client service handles the failure
+  with implemented resilience patterns (Circuit Breaker and Retry).
+
+configuration:
+  kubernetes_namespace: "lab3-resilience"
+
+steady-state-hypothesis:
+  title: Application is healthy and responsive
+  probes:
+  - name: client-service-is-available
+    type: probe
+    provider:
+      type: http
+      url: http://localhost:30080/health
+      timeout: 5
+    tolerance:
+      type: jsonpath
+      path: $.status
+      expect: "healthy"
+  
+  - name: backend-service-is-available
+    type: probe
+    provider:
+      type: http
+      url: http://localhost:30080/api/call-backend
+      timeout: 10
+    tolerance:
+      - type: status
+        status: [200, 503]  # 503 is acceptable if circuit breaker is open
+
+method:
+- type: action
+  name: introduce-network-partition
+  provider:
+    type: python
+    module: chaosk8s.pod.actions
+    func: terminate_pods
+    arguments:
+      label_selector: "app=backend-service"
+      ns: "lab3-resilience"
+      qty: 1
+      grace_period: 0
+  pauses:
+    after: 30
+
+- type: probe
+  name: verify-circuit-breaker-opens
+  provider:
+    type: http
+    url: http://localhost:30080/health
+    timeout: 5
+  tolerance:
+    type: jsonpath
+    path: $.circuit_breaker_state
+    expect: "open"
+  
+- type: probe
+  name: client-continues-responding
+  provider:
+    type: http
+    url: http://localhost:30080/api/call-backend
+    timeout: 5
+  tolerance:
+    - type: status
+      status: [503]  # Should fail fast with 503
+
+rollbacks:
+- type: action
+  name: wait-for-recovery
+  provider:
+    type: process
+    path: sleep
+    arguments: ["60"]
+
+- type: probe
+  name: verify-services-recovered
+  provider:
+    type: http
+    url: http://localhost:30080/health
+    timeout: 10
+  tolerance:
+    type: jsonpath
+    path: $.status
+    expect: "healthy"
+
